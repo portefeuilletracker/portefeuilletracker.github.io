@@ -6,13 +6,16 @@ import type { Holding } from "./types";
 // derives automatically from this list — you never edit charts
 // directly.
 //
-// currentPrice is not fetched live yet (see README "Next steps"),
-// so update it by hand when you want fresh numbers.
+// ticker must match Yahoo Finance's symbol exactly, including any
+// exchange suffix (e.g. ".AS" for Euronext Amsterdam) — the app
+// fetches live prices by this symbol on load. If a symbol can't be
+// found, the app falls back to the currentPrice below, so keep that
+// reasonably up to date too.
 // ---------------------------------------------------------------
 
 export const holdings: Holding[] = [
   {
-    ticker: "VWRL",
+    ticker: "VWRL.AS",
     name: "Vanguard FTSE All-World UCITS ETF",
     assetType: "ETF",
     region: "Global / Diversified",
@@ -38,7 +41,7 @@ export const holdings: Holding[] = [
     broker: "DEGIRO",
   },
   {
-    ticker: "ASML",
+    ticker: "ASML.AS",
     name: "ASML Holding N.V.",
     assetType: "Stock",
     region: "Netherlands",
@@ -51,7 +54,7 @@ export const holdings: Holding[] = [
     broker: "DEGIRO",
   },
   {
-    ticker: "VWCE",
+    ticker: "VFEM.AS",
     name: "Vanguard FTSE Emerging Markets UCITS ETF",
     assetType: "ETF",
     region: "Emerging Markets",

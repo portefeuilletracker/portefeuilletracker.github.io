@@ -216,7 +216,7 @@ export default function AddHoldingModal({
     const [profile, priceResult, classification] = await Promise.all([
       fetchSymbolProfile(match.ticker),
       fetchLivePrices([match.ticker]).catch(() => null),
-      classifyHolding(match.ticker, assetType),
+      classifyHolding(match.ticker, assetType, match.name),
     ]);
 
     const live = priceResult?.prices.get(match.ticker);
@@ -245,7 +245,7 @@ export default function AddHoldingModal({
     const ticker = form.ticker.trim();
     if (!ticker) return;
     setClassifyStatus("loading");
-    const classification = await classifyHolding(ticker, form.assetType);
+    const classification = await classifyHolding(ticker, form.assetType, form.name);
     applyClassification(classification);
   }
 

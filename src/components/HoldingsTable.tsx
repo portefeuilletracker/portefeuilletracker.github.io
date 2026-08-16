@@ -1,8 +1,10 @@
 import { computeHoldingMetrics } from "../lib/calculations";
 import type { Holding } from "../data/types";
+import type { FxRates } from "../lib/fxRates";
 
 interface Props {
   holdings: Holding[];
+  fxRates: FxRates;
   onRemove?: (ticker: string) => void;
 }
 
@@ -12,8 +14,10 @@ const CURRENCY_SYMBOL: Record<Holding["currency"], string> = {
   GBP: "£",
 };
 
-export default function HoldingsTable({ holdings, onRemove }: Props) {
-  const rows = holdings.map(computeHoldingMetrics).sort((a, b) => b.marketValue - a.marketValue);
+export default function HoldingsTable({ holdings, fxRates, onRemove }: Props) {
+  const rows = holdings
+    .map((h) => computeHoldingMetrics(h, fxRates))
+    .sort((a, b) => b.marketValueEur - a.marketValueEur);
 
   return (
     <div>
@@ -26,13 +30,13 @@ export default function HoldingsTable({ holdings, onRemove }: Props) {
               <th className="py-2 pr-4 font-normal">Type</th>
               <th className="py-2 pr-4 font-normal text-right">Shares</th>
               <th className="py-2 pr-4 font-normal text-right">Price</th>
-              <th className="py-2 pr-4 font-normal text-right">Value</th>
+              <th className="py-2 pr-4 font-normal text-right">Value (EUR)</th>
               <th className="py-2 font-normal text-right">Gain/Loss</th>
               {onRemove && <th className="py-2 pl-4 font-normal text-right sr-only">Remove</th>}
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ holding, marketValue, gainLoss, gainLossPct }) => {
+            {rows.map(({ holding, marketValueEur, gainLoss, gainLossPct }) => {
               const sym = CURRENCY_SYMBOL[holding.currency];
               const positive = gainLoss >= 0;
               return (
@@ -51,10 +55,14 @@ export default function HoldingsTable({ holdings, onRemove }: Props) {
                   <td className="py-2.5 pr-4 text-right font-mono tabular">
                     {sym}
                     {holding.currentPrice.toFixed(2)}
+                    {holding.currency !== "EUR" && (
+                      <span className="block text-[10px] text-ink-soft">
+                        {holding.currency}
+                      </span>
+                    )}
                   </td>
                   <td className="py-2.5 pr-4 text-right font-mono tabular">
-                    {sym}
-                    {Math.round(marketValue).toLocaleString()}
+                    €{Math.round(marketValueEur).toLocaleString()}
                   </td>
                   <td
                     className={`py-2.5 text-right font-mono tabular ${

@@ -2,11 +2,12 @@ import type { PortfolioSummary } from "../lib/calculations";
 
 interface Props {
   summary: PortfolioSummary;
-  currency?: string;
 }
 
-export default function SummaryHeader({ summary, currency = "€" }: Props) {
-  const gainPositive = summary.totalGainLoss >= 0;
+// All summary figures are computed in EUR (see calculations.ts), so
+// this always displays with the euro sign — no currency prop needed.
+export default function SummaryHeader({ summary }: Props) {
+  const gainPositive = summary.totalGainLossEur >= 0;
 
   return (
     <header className="mb-10">
@@ -15,15 +16,12 @@ export default function SummaryHeader({ summary, currency = "€" }: Props) {
       </p>
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <h1 className="font-display text-5xl sm:text-6xl font-semibold tabular">
-          {currency}
-          {Math.round(summary.totalValue).toLocaleString()}
+          €{Math.round(summary.totalValueEur).toLocaleString()}
         </h1>
         <span
           className={`font-mono text-lg tabular ${gainPositive ? "text-gain" : "text-loss"}`}
         >
-          {gainPositive ? "+" : ""}
-          {currency}
-          {Math.round(summary.totalGainLoss).toLocaleString()} (
+          {gainPositive ? "+" : ""}€{Math.round(summary.totalGainLossEur).toLocaleString()} (
           {gainPositive ? "+" : ""}
           {summary.totalGainLossPct.toFixed(1)}%)
         </span>
@@ -33,15 +31,13 @@ export default function SummaryHeader({ summary, currency = "€" }: Props) {
         <span>
           Cost basis{" "}
           <span className="font-mono text-ink tabular">
-            {currency}
-            {Math.round(summary.totalCost).toLocaleString()}
+            €{Math.round(summary.totalCostEur).toLocaleString()}
           </span>
         </span>
         <span>
           Annual dividend income{" "}
           <span className="font-mono text-ink tabular">
-            {currency}
-            {Math.round(summary.annualDividendIncome).toLocaleString()}
+            €{Math.round(summary.annualDividendIncomeEur).toLocaleString()}
           </span>
         </span>
         <span>

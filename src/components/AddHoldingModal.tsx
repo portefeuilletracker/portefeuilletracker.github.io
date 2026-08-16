@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AssetType, Holding, Region, Sector } from "../data/types";
 import { fetchSymbolProfile, searchSymbols, type SymbolMatch } from "../lib/symbolSearch";
 import { fetchLivePrices } from "../lib/priceApi";
+import { fetchFxRates, convertCurrency, type FxRates } from "../lib/fxRates";
 import { mapAssetType, mapRegion, mapSector } from "../lib/classify";
 
 const ASSET_TYPES: AssetType[] = ["Stock", "ETF", "Bond", "REIT", "Crypto", "Cash"];
@@ -33,6 +34,7 @@ const CURRENCIES: Holding["currency"][] = ["EUR", "USD", "GBP"];
 interface Props {
   isOpen: boolean;
   existingTickers: string[];
+  fxRates: FxRates;
   onClose: () => void;
   onAdd: (holding: Holding) => void;
 }
@@ -53,7 +55,13 @@ const emptyForm = {
   referenceCode: "",
 };
 
-export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAdd }: Props) {
+export default function AddHoldingModal({
+  isOpen,
+  existingTickers,
+  fxRates: fxRatesProp,
+  onClose,
+  onAdd,
+}: Props) {
   const [step, setStep] = useState<Step>("search");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SymbolMatch[]>([]);
@@ -63,17 +71,26 @@ export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAd
   const [duplicateWarning, setDuplicateWarning] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Tracks which currency avgCost/currentPrice are CURRENTLY expressed
+  // in. Starts as the instrument's real trading currency once fetched;
+  // updates to match `form.currency` after a conversion, so the
+  // "Convert" button always converts from wherever the numbers
+  // currently stand rather than double-converting.
+  const [valuesCurrency, setValuesCurrency] = useState<string | null>(null);
+  const [rates, setRates] = useState<FxRates>(fxRatesProp);
+
   useEffect(() => {
     if (!isOpen) {
-      // reset everything when the modal closes so it opens fresh next time
       setStep("search");
       setQuery("");
       setResults([]);
       setManualEntry(false);
       setForm(emptyForm);
       setDuplicateWarning(false);
+      setValuesCurrency(null);
+      setRates(fxRatesProp);
     }
-  }, [isOpen]);
+  }, [isOpen, fxRatesProp]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -96,6 +113,14 @@ export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAd
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [query]);
+
+  // Make sure we have an EUR rate for whatever currency the values are
+  // currently in, so the "Convert" button's rate display and math are
+  // never stuck on a stale/missing rate.
+  useEffect(() => {
+    if (!valuesCurrency || valuesCurrency in rates) return;
+    fetchFxRates([valuesCurrency]).then((r) => setRates((prev) => ({ ...prev, ...r })));
+  }, [valuesCurrency, rates]);
 
   async function selectSymbol(match: SymbolMatch) {
     if (existingTickers.includes(match.ticker)) {
@@ -123,21 +148,42 @@ export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAd
     ]);
 
     const live = priceResult?.prices.get(match.ticker);
+    const nativeCurrency = (live?.currency ?? profile.currency) as Holding["currency"] | undefined;
 
     setForm((f) => ({
       ...f,
       region: mapRegion(profile.country, assetType),
       sector: mapSector(profile.sector, assetType),
-      currency: (live?.currency as Holding["currency"]) ?? (profile.currency as Holding["currency"]) ?? f.currency,
+      currency: nativeCurrency ?? f.currency,
       currentPrice: live ? String(live.price) : f.currentPrice,
     }));
+    setValuesCurrency(nativeCurrency ?? null);
   }
 
   function startManualEntry() {
     setDuplicateWarning(false);
     setManualEntry(true);
     setForm({ ...emptyForm, ticker: query.trim() });
+    setValuesCurrency(null);
     setStep("form");
+  }
+
+  function convertValuesToSelectedCurrency() {
+    if (!valuesCurrency || valuesCurrency === form.currency) return;
+    setForm((f) => {
+      const avgCost = parseFloat(f.avgCost);
+      const currentPrice = parseFloat(f.currentPrice);
+      return {
+        ...f,
+        avgCost: Number.isFinite(avgCost)
+          ? convertCurrency(avgCost, valuesCurrency, f.currency, rates).toFixed(4)
+          : f.avgCost,
+        currentPrice: Number.isFinite(currentPrice)
+          ? convertCurrency(currentPrice, valuesCurrency, f.currency, rates).toFixed(4)
+          : f.currentPrice,
+      };
+    });
+    setValuesCurrency(form.currency);
   }
 
   function submit() {
@@ -172,6 +218,13 @@ export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAd
   }
 
   if (!isOpen) return null;
+
+  const showConvert =
+    valuesCurrency !== null && valuesCurrency !== form.currency && (form.avgCost || form.currentPrice);
+  const conversionRate =
+    showConvert && valuesCurrency
+      ? convertCurrency(1, valuesCurrency, form.currency, rates)
+      : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-ink/40 px-4 py-10 overflow-y-auto">
@@ -385,6 +438,38 @@ export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAd
                 />
               </Field>
             </div>
+
+            {showConvert && (
+              <div className="rounded-sm border border-brass/40 bg-brass/10 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-ink-soft">
+                    Avg. cost and current price above are still in{" "}
+                    <span className="font-mono text-ink">{valuesCurrency}</span>. Convert them to{" "}
+                    <span className="font-mono text-ink">{form.currency}</span> using today's
+                    rate
+                    {conversionRate && (
+                      <>
+                        {" "}
+                        (1 {valuesCurrency} ≈ {conversionRate.toFixed(4)} {form.currency})
+                      </>
+                    )}
+                    ?
+                  </p>
+                  <button
+                    type="button"
+                    onClick={convertValuesToSelectedCurrency}
+                    className="shrink-0 rounded-sm bg-ink px-3 py-1.5 text-xs text-paper hover:bg-ink/90"
+                  >
+                    Convert
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[11px] text-ink-soft">
+                  Uses today's exchange rate for both fields. Fine for current price; for avg.
+                  cost this approximates what you'd have paid in {form.currency} today, not the
+                  rate on your actual purchase date.
+                </p>
+              </div>
+            )}
 
             <div className="flex items-center justify-between pt-2">
               <button

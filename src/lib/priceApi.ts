@@ -17,17 +17,12 @@
 // US tickers are bare (AAPL). Non-US listings need an exchange suffix,
 // e.g. ASML.AS for ASML on Euronext Amsterdam, or VWRL.AS for a
 // Amsterdam-listed ETF. Look the symbol up on finance.yahoo.com if
-// you're not sure of the suffix.
+// you're not sure of the suffix — or use the in-app "Add holding"
+// search, which looks this up for you.
+
+import { CORS_PROXIES, fetchWithTimeout } from "./corsProxy";
 
 const YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/";
-
-const CORS_PROXIES: Array<(target: string) => string> = [
-  (target) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`,
-  (target) => `https://corsproxy.io/?url=${encodeURIComponent(target)}`,
-  (target) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(target)}`,
-];
-
-const FETCH_TIMEOUT_MS = 8000;
 
 export interface LivePrice {
   ticker: string;
@@ -39,12 +34,6 @@ export interface PriceFetchResult {
   prices: Map<string, LivePrice>;
   failedTickers: string[];
   fetchedAt: Date;
-}
-
-function fetchWithTimeout(url: string): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
 async function tryProxy(

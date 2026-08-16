@@ -1,7 +1,7 @@
 // The core data model. Every holding you own gets one entry.
-// Keep the categories (assetType, sector, region) from a controlled
-// vocabulary so the allocation charts stay consistent — see the
-// unions below rather than free-typing strings in holdings.ts.
+// Keep assetType/sector/country from a controlled vocabulary so the
+// allocation charts stay consistent — see the unions below rather
+// than free-typing strings in holdings.ts.
 
 export type AssetType =
   | "Stock"
@@ -11,13 +11,61 @@ export type AssetType =
   | "Crypto"
   | "Cash";
 
-export type Region =
-  | "North America"
-  | "Europe"
-  | "Emerging Markets"
-  | "Asia-Pacific"
-  | "Global / Diversified"
-  | "Netherlands";
+// Countries an ETF's underlying holdings (or a single stock's HQ
+// country) can be classified into. This is deliberately a flat list
+// of individual countries rather than macro regions ("Europe",
+// "Emerging Markets") — see classify.ts for how a fund's basket of
+// countries gets built up automatically. "Other / Unclassified"
+// covers anything the auto-classifier couldn't resolve (e.g. the
+// long tail of an index fund's holdings beyond what Yahoo discloses).
+export type Country =
+  | "United States"
+  | "Canada"
+  | "Mexico"
+  | "Brazil"
+  | "United Kingdom"
+  | "Germany"
+  | "France"
+  | "Netherlands"
+  | "Switzerland"
+  | "Spain"
+  | "Italy"
+  | "Sweden"
+  | "Belgium"
+  | "Denmark"
+  | "Norway"
+  | "Finland"
+  | "Ireland"
+  | "Austria"
+  | "Portugal"
+  | "Poland"
+  | "Luxembourg"
+  | "Japan"
+  | "China"
+  | "Hong Kong"
+  | "South Korea"
+  | "Taiwan"
+  | "Singapore"
+  | "Australia"
+  | "New Zealand"
+  | "India"
+  | "Indonesia"
+  | "Thailand"
+  | "Malaysia"
+  | "Philippines"
+  | "Vietnam"
+  | "South Africa"
+  | "Saudi Arabia"
+  | "United Arab Emirates"
+  | "Israel"
+  | "Turkey"
+  | "Other / Unclassified";
+
+/** One country's share of a holding's value, as a percentage (0-100). */
+export interface CountryWeight {
+  country: Country;
+  pct: number;
+}
 
 export type Sector =
   | "Technology"
@@ -34,14 +82,32 @@ export type Sector =
   | "Diversified / Multi-Sector"
   | "Cash";
 
+/** One sector's share of a holding's value, as a percentage (0-100). */
+export interface SectorWeight {
+  sector: Sector;
+  pct: number;
+}
+
 export interface Holding {
   /** Ticker symbol, e.g. "VWRL" or "AAPL" */
   ticker: string;
   /** Full display name */
   name: string;
   assetType: AssetType;
-  region: Region;
-  sector: Sector;
+  /**
+   * Geographic breakdown of this holding. A single stock is one entry
+   * at 100%; an ETF/fund is however many countries its underlying
+   * holdings span, each with its share of the fund's value. Built
+   * automatically when you add a holding through the app (see
+   * src/lib/classify.ts and src/lib/autoClassify.ts) — this is not
+   * meant to be hand-typed.
+   */
+  countries: CountryWeight[];
+  /**
+   * Sector breakdown of this holding, same shape/reasoning as
+   * `countries` above.
+   */
+  sectors: SectorWeight[];
   /** Number of shares/units held */
   shares: number;
   /** Average price paid per share, in the holding's own currency */

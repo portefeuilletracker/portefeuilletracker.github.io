@@ -20,6 +20,7 @@
 // look-through data source; see the README.
 
 import type { AssetType, Country, CountryWeight, SectorWeight } from "../data/types";
+import { findKnownFundAllocation } from "../data/knownFundAllocations";
 import {
   fetchFundBreakdown,
   fetchSymbolProfile,
@@ -75,7 +76,31 @@ async function classifyStock(ticker: string): Promise<ClassificationResult> {
   };
 }
 
-async function classifyFund(ticker: string): Promise<ClassificationResult> {
+async function classifyFund(ticker: string, name: string): Promise<ClassificationResult> {
+  const known = findKnownFundAllocation(ticker, name);
+  if (known) {
+    // Curated, sourced data - see knownFundAllocations.ts for why this
+    // is checked before any network call. Sector data isn't always
+    // curated (see that file's comment); when it's missing here, still
+    // attempt the live per-fund sector lookup, which draws on a
+    // different Yahoo endpoint than the top-holdings country lookup
+    // and tends to work even when that one doesn't.
+    let sectors = known.sectors;
+    if (!sectors) {
+      try {
+        const fund = await fetchFundBreakdown(ticker);
+        sectors = fund.sectorWeightings.length > 0 ? mapFundSectorWeightings(fund.sectorWeightings) : undefined;
+      } catch {
+        // fine - fall through to the fallback sector bucket below
+      }
+    }
+    return {
+      countries: known.countries,
+      sectors: sectors ?? FALLBACK.sectors,
+      isFallback: false,
+    };
+  }
+
   const fund = await fetchFundBreakdown(ticker);
   if (fund.sectorWeightings.length === 0 && fund.topHoldings.length === 0) return FALLBACK;
 
@@ -92,14 +117,19 @@ async function classifyFund(ticker: string): Promise<ClassificationResult> {
 }
 
 /**
- * Automatically classifies a holding's country and sector breakdown
- * from Yahoo Finance data. Never throws — any failure degrades to the
- * "Other / Unclassified" + "Diversified / Multi-Sector" fallback so the
- * add flow always completes.
+ * Automatically classifies a holding's country and sector breakdown.
+ * For ETFs, checks the curated known-fund table first (see
+ * knownFundAllocations.ts) before falling back to a live Yahoo lookup.
+ * Never throws — any failure degrades to the "Other / Unclassified" +
+ * "Diversified / Multi-Sector" fallback so the add flow always completes.
  */
-export async function classifyHolding(ticker: string, assetType: AssetType): Promise<ClassificationResult> {
+export async function classifyHolding(
+  ticker: string,
+  assetType: AssetType,
+  name = ""
+): Promise<ClassificationResult> {
   try {
-    return assetType === "ETF" ? await classifyFund(ticker) : await classifyStock(ticker);
+    return assetType === "ETF" ? await classifyFund(ticker, name) : await classifyStock(ticker);
   } catch {
     return FALLBACK;
   }

@@ -13,6 +13,14 @@ import AddHoldingModal from "./components/AddHoldingModal";
 
 type FetchStatus = "idle" | "loading" | "success" | "error";
 
+/** True when a holding's country breakdown is just the generic "we
+ *  couldn't classify this" placeholder rather than real data - worth
+ *  retrying (e.g. after knownFundAllocations.ts gains a new entry)
+ *  rather than treating it as a settled classification forever. */
+function isUnclassified(h: Holding): boolean {
+  return h.countries.length === 1 && h.countries[0].country === "Other / Unclassified";
+}
+
 export default function App() {
   // loadHoldings() also migrates any old-schema data in localStorage
   // (see portfolioStore.ts) - keep that one-time result in a ref so we
@@ -29,6 +37,7 @@ export default function App() {
   const [failedTickers, setFailedTickers] = useState<string[]>([]);
   const [fxRates, setFxRates] = useState<FxRates>({ EUR: 1 });
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isReclassifying, setIsReclassifying] = useState(false);
 
   async function refreshPrices() {
     setStatus("loading");
@@ -61,28 +70,49 @@ export default function App() {
     }
   }
 
+  /** Re-runs classification for a specific set of holdings and merges
+   *  the result in as each one resolves (not all-at-once), so the
+   *  table fills in progressively rather than waiting on the slowest
+   *  ticker. Used both for the initial-load retry below and the manual
+   *  "Reclassify" button. */
+  async function reclassify(targets: Holding[]) {
+    if (targets.length === 0) return;
+    setIsReclassifying(true);
+    await Promise.all(
+      targets.map(async (holding) => {
+        const result = await classifyHolding(holding.ticker, holding.assetType, holding.name);
+        setHoldings((prev) => {
+          const updated = prev.map((h) =>
+            h.ticker === holding.ticker
+              ? { ...h, countries: result.countries, sectors: result.sectors }
+              : h
+          );
+          saveHoldings(updated);
+          return updated;
+        });
+      })
+    );
+    setIsReclassifying(false);
+  }
+
   useEffect(() => {
     refreshPrices();
 
-    // Any holdings that came from an older data schema were given a
-    // placeholder "Other / Unclassified" / "Diversified / Multi-Sector"
-    // breakdown by loadHoldings() so the app doesn't crash - now
-    // actually re-derive their real countries/sectors from live data,
-    // same lookup the Add Holding form uses.
-    const migratedTickers = initialLoadRef.current?.migratedTickers ?? [];
+    // Two groups of holdings are worth automatically re-classifying on
+    // load, using the current classifier (which checks the curated
+    // known-fund table in knownFundAllocations.ts before ever touching
+    // the network):
+    //  1. migratedTickers - came from an older data schema and got a
+    //     placeholder breakdown just so the app wouldn't crash on load.
+    //  2. anything else still sitting on "Other / Unclassified" from a
+    //     previous attempt - e.g. common UCITS ETFs that used to fail
+    //     the live-only lookup but are now covered by the curated
+    //     table, or added before that table existed.
+    // Deduped by ticker so a holding in both groups is only retried once.
     const base = initialLoadRef.current?.holdings ?? [];
-    migratedTickers.forEach(async (ticker) => {
-      const holding = base.find((h) => h.ticker === ticker);
-      if (!holding) return;
-      const result = await classifyHolding(ticker, holding.assetType);
-      setHoldings((prev) => {
-        const updated = prev.map((h) =>
-          h.ticker === ticker ? { ...h, countries: result.countries, sectors: result.sectors } : h
-        );
-        saveHoldings(updated);
-        return updated;
-      });
-    });
+    const migratedTickers = new Set(initialLoadRef.current?.migratedTickers ?? []);
+    const targets = base.filter((h) => migratedTickers.has(h.ticker) || isUnclassified(h));
+    reclassify(targets);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -161,6 +191,13 @@ export default function App() {
             Holdings
           </h3>
           <div className="flex items-center gap-4">
+            <button
+              onClick={() => reclassify(holdings)}
+              disabled={isReclassifying}
+              className="text-xs font-mono uppercase tracking-wide text-ink-soft hover:text-ink underline underline-offset-2 disabled:opacity-40"
+            >
+              {isReclassifying ? "Reclassifying…" : "Reclassify countries/sectors"}
+            </button>
             <button
               onClick={handleReset}
               className="text-xs font-mono uppercase tracking-wide text-ink-soft hover:text-ink underline underline-offset-2"

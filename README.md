@@ -30,7 +30,7 @@ position you hold:
 
 ```ts
 {
-  ticker: "VWRL",
+  ticker: "VWRL.AS",
   name: "Vanguard FTSE All-World UCITS ETF",
   assetType: "ETF",
   region: "Global / Diversified",
@@ -51,6 +51,39 @@ You never need to touch chart code by hand.
 The allowed values for `assetType`, `region`, and `sector` are controlled
 vocabularies defined in `src/data/types.ts`. Extend those unions if you
 need a category that isn't there yet (e.g. add `"Japan"` to `Region`).
+
+`ticker` must match the symbol exactly as Yahoo Finance shows it,
+including any exchange suffix -- this is what live price fetching looks
+up. US tickers are bare (`AAPL`). Others need a suffix, e.g. `.AS` for
+Euronext Amsterdam. Search the name on finance.yahoo.com if you're
+unsure of yours; the page URL shows the exact symbol. `currentPrice` is
+your fallback -- it's shown as-is for any ticker live fetching can't
+resolve.
+
+## Live prices
+
+On load, the app fetches each ticker's latest price from Yahoo
+Finance's public chart endpoint and recomputes your totals and
+allocation percentages from it. Click Refresh to fetch again without
+reloading the page.
+
+A few things worth knowing:
+
+- **No API key or signup** -- this endpoint is free and public, but
+  also unofficial and undocumented by Yahoo. It can change shape or
+  start rate-limiting without notice. Fine for a personal tracker
+  refreshed occasionally; not something to depend on for anything
+  critical.
+- **CORS proxy in the middle** -- browsers block direct cross-origin
+  requests to Yahoo, so requests are routed through a free public
+  proxy (`corsproxy.io`, configured in `src/lib/priceApi.ts`). If that
+  proxy ever goes down or gets slow, swap in an alternative there.
+- **Per-ticker fallback** -- if a symbol fails to fetch (wrong suffix,
+  rate limit, proxy hiccup), that holding just keeps showing its
+  stored `currentPrice` rather than breaking the page. The status bar
+  under the summary header shows which tickers, if any, didn't refresh.
+- **Currency is still naive** -- a live USD price is summed into your
+  totals at face value, same simplification as before (see below).
 
 ## Deploying to GitHub Pages
 
@@ -94,33 +127,38 @@ Options:
 - Or (a later step) move `holdings.ts` into a gitignored file and load
   it at build time — ask me when you're ready to wire that up.
 
-## What's built so far (brick 1)
+## What's built so far
 
+**Brick 1 — scaffold**
 - Project scaffold, styling system, and deploy pipeline
 - Typed data model for holdings (`src/data/types.ts`)
 - Calculation layer: market value, gain/loss, dividend income, and
   percentage allocation by any grouping (`src/lib/calculations.ts`)
 - Summary header (total value, gain/loss, yield)
-- Three allocation "strips" — region, sector, asset type
+- Three allocation "strips" -- region, sector, asset type
 - A sortable-by-value holdings table
 - Sample data for 5 holdings so the app renders immediately
 
+**Brick 2 -- live prices**
+- Client-side fetch from Yahoo Finance's public chart endpoint on page
+  load, with a manual Refresh button (`src/lib/priceApi.ts`)
+- Per-ticker fallback to the stored `currentPrice` if a fetch fails
+- A status bar showing when prices were last refreshed and which
+  tickers, if any, didn't update
+
 ## Roadmap — next bricks, in a sensible order
 
-1. **Live prices** — pull current prices from a free API (e.g. a
-   currency-aware Yahoo Finance proxy) instead of hand-editing
-   `currentPrice`.
-2. **Multi-currency support** — proper FX conversion for totals instead
+1. **Multi-currency support** — proper FX conversion for totals instead
    of the current "treat all currencies as equal" simplification.
-3. **A public profile view** (like the Jong Beleggen page) — a
+2. **A public profile view** (like the Jong Beleggen page) — a
    read-only, shareable summary page separate from your private editing
    view, with your own privacy settings on what's shown.
-4. **Dividend calendar** — upcoming payments by month, based on
+3. **Dividend calendar** — upcoming payments by month, based on
    `annualDividendPerShare` and payout frequency.
-5. **History over time** — snapshot your portfolio periodically (e.g. a
+4. **History over time** — snapshot your portfolio periodically (e.g. a
    small JSON log committed monthly, or a lightweight database) to chart
    growth, not just a current-state snapshot.
-6. **Pie/donut chart view** as an alternative to the allocation strips,
+5. **Pie/donut chart view** as an alternative to the allocation strips,
    using `recharts` (already installed).
 
 Tell me which of these you want to tackle next and we'll build it as

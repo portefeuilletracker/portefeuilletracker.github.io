@@ -142,16 +142,37 @@ A few things worth knowing:
   start rate-limiting without notice. Fine for a personal tracker
   refreshed occasionally; not something to depend on for anything
   critical.
-- **CORS proxy in the middle** -- browsers block direct cross-origin
-  requests to Yahoo, so requests are routed through a free public
-  proxy (`corsproxy.io`, configured in `src/lib/priceApi.ts`). If that
-  proxy ever goes down or gets slow, swap in an alternative there.
 - **Per-ticker fallback** -- if a symbol fails to fetch (wrong suffix,
   rate limit, proxy hiccup), that holding just keeps showing its
   stored `currentPrice` rather than breaking the page. The status bar
   under the summary header shows which tickers, if any, didn't refresh.
-- **Currency is still naive** -- a live USD price is summed into your
-  totals at face value, same simplification as before (see below).
+
+## Currency conversion
+
+Every holding keeps its own trading currency (`EUR`, `USD`, or `GBP`)
+for its per-share price, shown as-is in the Holdings table. All
+portfolio-level figures -- the big total, gain/loss, dividend income,
+and the three allocation strips -- are converted to EUR first, using
+real exchange rates from [Frankfurter](https://frankfurter.dev), a
+free ECB-based rates API (`src/lib/fxRates.ts`).
+
+- **Real rates, not 1:1** -- a $100 position and a €100 position are no
+  longer just added together as if a dollar were a euro.
+- **Daily rates** -- ECB rates update once per business day, not
+  intraday. Fine for tracking a portfolio's value; not for anything
+  time-sensitive.
+- **No proxy needed here** -- unlike the Yahoo endpoints, Frankfurter
+  sends proper CORS headers, so this is a direct browser request with
+  nothing extra to break.
+- **Cached for a few hours** in `localStorage`, and the last successful
+  fetch is kept as a fallback if a later refresh fails, rather than
+  silently reverting to treating currencies as equal.
+- **Add Holding form** -- when you pick a symbol that trades in USD or
+  GBP but set the Currency field to something else, a "Convert" helper
+  appears to fill in the avg. cost and current price fields at today's
+  rate. It's exact for current price; for avg. cost it's an
+  approximation of what you'd pay today, not the rate on your actual
+  purchase date (exchange rates move).
 
 ## Deploying to GitHub Pages
 
@@ -221,16 +242,26 @@ Options:
 - A status bar showing when prices were last refreshed and which
   tickers, if any, didn't update
 
+**Brick 3 -- personalization + real currency conversion**
+- Search-and-add flow backed by Yahoo Finance's symbol search, with
+  manual entry as a fallback (`AddHoldingModal.tsx`, `symbolSearch.ts`)
+- Remove any holding from the table
+- Portfolio saved in `localStorage`, with a Reset-to-starter option
+  (`portfolioStore.ts`)
+- Real EUR conversion for every portfolio-level total and allocation,
+  via Frankfurter's ECB rates (`fxRates.ts`) -- no more treating a
+  dollar as a euro
+- A "Convert to EUR" helper in the Add Holding form for USD/GBP
+  instruments
+
 ## Roadmap — next bricks, in a sensible order
 
-1. **Multi-currency support** — proper FX conversion for totals instead
-   of the current "treat all currencies as equal" simplification.
-2. **A public profile view** (like the Jong Beleggen page) — a
+1. **A public profile view** (like the Jong Beleggen page) — a
    read-only, shareable summary page separate from your private editing
    view, with your own privacy settings on what's shown.
-3. **Dividend calendar** — upcoming payments by month, based on
+2. **Dividend calendar** — upcoming payments by month, based on
    `annualDividendPerShare` and payout frequency.
-4. **History over time** — snapshot your portfolio periodically (e.g. a
+3. **History over time** — snapshot your portfolio periodically (e.g. a
    small JSON log committed monthly, or a lightweight database) to chart
    growth, not just a current-state snapshot.
 5. **Pie/donut chart view** as an alternative to the allocation strips,

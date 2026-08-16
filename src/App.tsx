@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Holding } from "./data/types";
-import { computeAllocation, computePortfolioSummary } from "./lib/calculations";
+import { computeWeightedAllocation, computePortfolioSummary } from "./lib/calculations";
 import { fetchLivePrices } from "./lib/priceApi";
 import { fetchFxRates, type FxRates } from "./lib/fxRates";
 import { loadHoldings, resetHoldings, saveHoldings } from "./lib/portfolioStore";
@@ -98,9 +98,15 @@ export default function App() {
   }
 
   const summary = computePortfolioSummary(holdings, fxRates);
-  const byRegion = computeAllocation(holdings, fxRates, (h) => h.region);
-  const bySector = computeAllocation(holdings, fxRates, (h) => h.sector);
-  const byAssetType = computeAllocation(holdings, fxRates, (h) => h.assetType);
+  const byCountry = computeWeightedAllocation(holdings, fxRates, (h) =>
+    h.countries.map((c) => ({ key: c.country, pct: c.pct }))
+  );
+  const bySector = computeWeightedAllocation(holdings, fxRates, (h) =>
+    h.sectors.map((s) => ({ key: s.sector, pct: s.pct }))
+  );
+  const byAssetType = computeWeightedAllocation(holdings, fxRates, (h) => [
+    { key: h.assetType, pct: 100 },
+  ]);
 
   return (
     <div className="min-h-screen bg-paper text-ink font-body">
@@ -115,7 +121,7 @@ export default function App() {
         />
 
         <section className="space-y-8">
-          <AllocationStrip title="By Region" slices={byRegion} />
+          <AllocationStrip title="By Country" slices={byCountry} />
           <AllocationStrip title="By Sector" slices={bySector} />
           <AllocationStrip title="By Asset Type" slices={byAssetType} />
         </section>

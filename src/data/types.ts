@@ -54,4 +54,12 @@ export interface Holding {
   annualDividendPerShare: number;
   /** Brokerage/account this is held in, e.g. "DEGIRO", "Trade Republic" */
   broker?: string;
+  /**
+   * Free-text personal note for cross-referencing this holding elsewhere —
+   * e.g. your broker's own symbol (DEGIRO shows Tradegate-listed
+   * instruments as "TDG:XXX") or an ISIN from justETF. Purely a label:
+   * it's never looked up or used for live pricing, which always goes
+   * through `ticker` via Yahoo Finance.
+   */
+  referenceCode?: string;
 }

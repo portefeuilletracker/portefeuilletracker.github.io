@@ -12,12 +12,16 @@ export type AssetType =
   | "Cash";
 
 // Countries an ETF's underlying holdings (or a single stock's HQ
-// country) can be classified into. This is deliberately a flat list
-// of individual countries rather than macro regions ("Europe",
-// "Emerging Markets") — see classify.ts for how a fund's basket of
-// countries gets built up automatically. "Other / Unclassified"
-// covers anything the auto-classifier couldn't resolve (e.g. the
-// long tail of an index fund's holdings beyond what Yahoo discloses).
+// country) can be classified into, plus a handful of continent-level
+// buckets. Specific countries are always preferred, but for a broadly
+// diversified global fund a specific-country breakdown genuinely isn't
+// public data anywhere for free — what funds' own factsheets publish
+// is continent-level weightings (see data/knownFundAllocations.ts). A
+// continent entry here (e.g. "Europe") is honest about that limit of
+// precision rather than a guess dressed up as a specific country.
+// "Other / Unclassified" is different from a continent bucket — it
+// means we don't even know the continent (e.g. the long tail of an
+// index fund's holdings beyond what's published anywhere).
 export type Country =
   | "United States"
   | "Canada"
@@ -59,7 +63,15 @@ export type Country =
   | "United Arab Emirates"
   | "Israel"
   | "Turkey"
-  | "Other / Unclassified";
+  | "Other / Unclassified"
+  // Continent-level buckets - see the comment above.
+  | "North America"
+  | "Europe"
+  | "Asia"
+  | "Oceania"
+  | "Latin America"
+  | "Middle East"
+  | "Africa";
 
 /** One country's share of a holding's value, as a percentage (0-100). */
 export interface CountryWeight {

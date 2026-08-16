@@ -40,6 +40,8 @@ interface Props {
 type Step = "search" | "form";
 
 const emptyForm = {
+  ticker: "",
+  name: "",
   assetType: "Stock" as AssetType,
   region: "Global / Diversified" as Region,
   sector: "Diversified / Multi-Sector" as Sector,
@@ -48,6 +50,7 @@ const emptyForm = {
   currentPrice: "",
   currency: "EUR" as Holding["currency"],
   broker: "",
+  referenceCode: "",
 };
 
 export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAdd }: Props) {
@@ -55,7 +58,7 @@ export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAd
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SymbolMatch[]>([]);
   const [searchStatus, setSearchStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [selected, setSelected] = useState<SymbolMatch | null>(null);
+  const [manualEntry, setManualEntry] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [duplicateWarning, setDuplicateWarning] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -66,7 +69,7 @@ export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAd
       setStep("search");
       setQuery("");
       setResults([]);
-      setSelected(null);
+      setManualEntry(false);
       setForm(emptyForm);
       setDuplicateWarning(false);
     }
@@ -100,14 +103,15 @@ export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAd
       return;
     }
     setDuplicateWarning(false);
-    setSelected(match);
+    setManualEntry(false);
     setStep("form");
 
     const assetType = mapAssetType(match.quoteType);
     setForm({
       ...emptyForm,
+      ticker: match.ticker,
+      name: match.name,
       assetType,
-      broker: "",
     });
 
     // Best-effort pre-fill: sector/region/currency/price. Every one of
@@ -129,16 +133,30 @@ export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAd
     }));
   }
 
+  function startManualEntry() {
+    setDuplicateWarning(false);
+    setManualEntry(true);
+    setForm({ ...emptyForm, ticker: query.trim() });
+    setStep("form");
+  }
+
   function submit() {
-    if (!selected) return;
+    const ticker = form.ticker.trim();
+    const name = form.name.trim() || ticker;
+    if (!ticker) return;
+    if (existingTickers.includes(ticker)) {
+      setDuplicateWarning(true);
+      return;
+    }
+
     const shares = parseFloat(form.shares);
     const avgCost = parseFloat(form.avgCost);
     const currentPrice = parseFloat(form.currentPrice) || avgCost;
     if (!shares || !avgCost) return;
 
     onAdd({
-      ticker: selected.ticker,
-      name: selected.name,
+      ticker,
+      name,
       assetType: form.assetType,
       region: form.region,
       sector: form.sector,
@@ -148,6 +166,7 @@ export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAd
       currency: form.currency,
       annualDividendPerShare: 0,
       broker: form.broker || undefined,
+      referenceCode: form.referenceCode || undefined,
     });
     onClose();
   }
@@ -159,7 +178,7 @@ export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAd
       <div className="w-full max-w-lg rounded-sm bg-paper border border-line shadow-xl">
         <div className="flex items-center justify-between border-b border-line px-5 py-4">
           <h2 className="font-display text-lg">
-            {step === "search" ? "Add a holding" : selected?.name}
+            {step === "search" ? "Add a holding" : manualEntry ? "Add manually" : form.name}
           </h2>
           <button
             onClick={onClose}
@@ -211,12 +230,67 @@ export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAd
                 </button>
               ))}
             </div>
+
+            <div className="mt-3 border-t border-line pt-3">
+              <button
+                onClick={startManualEntry}
+                className="text-xs font-mono uppercase tracking-wide text-ink-soft hover:text-ink underline underline-offset-2"
+              >
+                Can't find it? Add it manually →
+              </button>
+              <p className="mt-1.5 text-xs text-ink-soft">
+                This search covers Yahoo Finance's listings, which is most stocks and ETFs — but
+                not everything. Notably it doesn't cover Tradegate (TDG on DEGIRO), so if your
+                ETF only trades there, look up an alternate listing of the same fund (e.g. on
+                Xetra or Euronext — same ISIN, different exchange) via this search, or add it
+                manually below.
+              </p>
+              <p className="mt-1.5 text-xs text-ink-soft">
+                Not sure of the ticker for a European ETF?{" "}
+                <a
+                  href="https://www.justetf.com/en/find-etf.html"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-2 hover:text-ink"
+                >
+                  Look it up on justETF ↗
+                </a>{" "}
+                and copy its ISIN — pasting an ISIN into the search box above often finds it
+                here too, since Yahoo indexes by ISIN as well as ticker.
+              </p>
+            </div>
           </div>
         )}
 
-        {step === "form" && selected && (
+        {step === "form" && (
           <div className="p-5 space-y-3">
-            <p className="font-mono text-sm text-ink-soft">{selected.ticker}</p>
+            {manualEntry ? (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Ticker">
+                  <input
+                    autoFocus
+                    value={form.ticker}
+                    onChange={(e) => setForm({ ...form, ticker: e.target.value.toUpperCase() })}
+                    placeholder="e.g. IWDA.AS"
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Name">
+                  <input
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="Fund or company name"
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+            ) : (
+              <p className="font-mono text-sm text-ink-soft">{form.ticker}</p>
+            )}
+
+            {duplicateWarning && (
+              <p className="text-xs text-loss">Already in your portfolio.</p>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <Field label="Asset type">
@@ -299,6 +373,14 @@ export default function AddHoldingModal({ isOpen, existingTickers, onClose, onAd
                 <input
                   value={form.broker}
                   onChange={(e) => setForm({ ...form, broker: e.target.value })}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Reference code (optional)">
+                <input
+                  value={form.referenceCode}
+                  onChange={(e) => setForm({ ...form, referenceCode: e.target.value })}
+                  placeholder="DEGIRO symbol, ISIN, etc."
                   className={inputClass}
                 />
               </Field>

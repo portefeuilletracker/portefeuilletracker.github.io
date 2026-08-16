@@ -37,7 +37,14 @@ export default function HoldingsTable({ holdings, onRemove }: Props) {
               const positive = gainLoss >= 0;
               return (
                 <tr key={holding.ticker} className="border-b border-line/60">
-                  <td className="py-2.5 pr-4 font-mono text-ink">{holding.ticker}</td>
+                  <td className="py-2.5 pr-4 font-mono text-ink">
+                    {holding.ticker}
+                    {holding.referenceCode && (
+                      <span className="block font-sans text-[10px] text-ink-soft">
+                        {holding.referenceCode}
+                      </span>
+                    )}
+                  </td>
                   <td className="py-2.5 pr-4 text-ink-soft">{holding.name}</td>
                   <td className="py-2.5 pr-4 text-ink-soft">{holding.assetType}</td>
                   <td className="py-2.5 pr-4 text-right font-mono tabular">{holding.shares}</td>

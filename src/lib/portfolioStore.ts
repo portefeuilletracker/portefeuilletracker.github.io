@@ -1,38 +1,66 @@
-// Persistence for the working portfolio. This is a static, no-backend
-// site, so "your portfolio" lives in the browser's localStorage rather
-// than in git — holdings.ts becomes just the *starter* portfolio used
-// to seed a fresh browser, and the "reset" option below to get back to.
-//
-// Everything you add or remove via the UI is saved here immediately, and
-// reloaded on your next visit (same browser/device only — this doesn't
-// sync across devices).
+// Migration-safe loader for portfolio data in localStorage.
+// Drop this into your store where you currently do JSON.parse(localStorage.getItem(...))
+type RawHolding = any; // narrow this to your real type as you prefer
 
-import type { Holding } from "../data/types";
-import { holdings as starterHoldings } from "../data/holdings";
+function migrateHolding(h: RawHolding): RawHolding {
+  if (!h || typeof h !== 'object') return h;
 
-const STORAGE_KEY = "portfolio-tracker:holdings";
-
-export function loadHoldings(): Holding[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as Holding[];
-  } catch {
-    // corrupted or inaccessible storage - fall back to the starter portfolio
+  // Migrate single-string legacy fields -> arrays
+  if (h.countries == null) {
+    if (typeof h.region === 'string' && h.region.length) {
+      h.countries = [h.region];
+    } else if (Array.isArray(h.countries)) {
+      // already correct
+    } else {
+      h.countries = [];
+    }
   }
-  return starterHoldings;
+
+  if (h.sectors == null) {
+    if (typeof h.sector === 'string' && h.sector.length) {
+      h.sectors = [h.sector];
+    } else if (Array.isArray(h.sectors)) {
+      // already correct
+    } else {
+      h.sectors = [];
+    }
+  }
+
+  // Other safe normalizations you might need:
+  // - convert numeric strings to numbers
+  // - ensure IDs exist
+  // - ensure nested objects exist
+  return h;
 }
 
-export function saveHoldings(holdings: Holding[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(holdings));
-  } catch {
-    // storage unavailable (private browsing, quota exceeded, etc.) -
-    // changes still work for this session, just won't persist on reload
+function migratePortfolio(parsed: any): any {
+  if (!parsed) return parsed;
+
+  // If your saved shape is an object with .holdings:
+  if (parsed.holdings && Array.isArray(parsed.holdings)) {
+    parsed.holdings = parsed.holdings.map(migrateHolding);
+    return parsed;
   }
+
+  // If your saved shape is an array of holdings directly:
+  if (Array.isArray(parsed)) {
+    return parsed.map(migrateHolding);
+  }
+
+  // Unknown shape: try best-effort, or fallback to default
+  return parsed;
 }
 
-/** Wipes your saved changes and goes back to the repo's starter holdings. */
-export function resetHoldings(): Holding[] {
-  saveHoldings(starterHoldings);
-  return starterHoldings;
+export function loadPortfolioFromStorage<T = any>(key = 'portfolio'): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const migrated = migratePortfolio(parsed);
+    return migrated as T;
+  } catch (err) {
+    console.error('Error loading portfolio from localStorage — clearing corrupted entry', err);
+    localStorage.removeItem(key);
+    return null;
+  }
 }

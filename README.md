@@ -60,6 +60,42 @@ unsure of yours; the page URL shows the exact symbol. `currentPrice` is
 your fallback -- it's shown as-is for any ticker live fetching can't
 resolve.
 
+## Adding and removing holdings from the app
+
+You don't have to edit `holdings.ts` for day-to-day changes anymore.
+Click **+ Add holding** in the app:
+
+1. Search by ticker or company/fund name. This searches Yahoo
+   Finance's symbol database directly (same unofficial, keyless
+   approach as live prices below), so effectively any listed stock or
+   ETF is searchable — not just the five starter positions.
+2. Pick a result. The app tries to pre-fill asset type, region, and
+   sector from Yahoo's data, plus the current price. This guess is
+   often right for large individual stocks, but region/sector for ETFs
+   in particular are close to impossible to infer automatically (a
+   fund can span every region and sector at once), so **always check
+   the dropdowns** before confirming — that's what keeps the
+   allocation charts meaningful.
+3. Fill in shares and average cost (these aren't fetchable from
+   anywhere and have to be typed in), then **Add to portfolio**.
+
+Each row in the holdings table has a **✕** to remove it.
+
+**Where this data lives:** once you add or remove anything through the
+app, your portfolio moves out of `holdings.ts` and into this browser's
+`localStorage` (see `src/lib/portfolioStore.ts`). `holdings.ts` becomes
+the "starter" portfolio — what a fresh browser sees before you've made
+any changes, and what **Reset to starter** restores. This also means
+your live edits:
+
+- only exist in the browser/device you made them in — there's no sync
+  across devices, and clearing site data wipes them
+- are no longer committed to git, which is good for privacy on a
+  public repo (see below) but means there's currently no backup; if
+  that matters to you, periodically copy the JSON out of
+  `localStorage["portfolio-tracker:holdings"]` (devtools → Application
+  → Local Storage) somewhere safe
+
 ## Live prices
 
 On load, the app fetches each ticker's latest price from Yahoo
@@ -115,9 +151,16 @@ git push -u origin main
 
 ## A note on privacy
 
-If your GitHub repository is **public**, your holdings, share counts,
-and portfolio value in `holdings.ts` will be publicly visible in the
-git history and source, even if the deployed page doesn't show a name.
+If your GitHub repository is **public**, whatever is committed in
+`holdings.ts` — i.e. your starter portfolio — will be publicly visible
+in the git history and source, even if the deployed page doesn't show
+a name. Anything you add or remove through the app's UI instead stays
+in your browser's `localStorage` and is never committed, so it's not
+publicly visible in the repo. It's still visible to anyone with access
+to that browser/device, and to Yahoo Finance / the CORS proxies as
+plain search and price-lookup traffic — this was never designed to
+hide your holdings from your own machine or from the network requests
+it makes.
 Options:
 
 - Make the repository **private** (GitHub Pages works on private repos

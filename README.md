@@ -33,8 +33,16 @@ position you hold:
   ticker: "VWRL.AS",
   name: "Vanguard FTSE All-World UCITS ETF",
   assetType: "ETF",
-  region: "Global / Diversified",
-  sector: "Diversified / Multi-Sector",
+  countries: [
+    { country: "United States", pct: 62 },
+    { country: "Japan", pct: 6 },
+    { country: "Other / Unclassified", pct: 32 },
+  ],
+  sectors: [
+    { sector: "Technology", pct: 24 },
+    { sector: "Financials", pct: 16 },
+    { sector: "Diversified / Multi-Sector", pct: 60 },
+  ],
   shares: 40,
   avgCost: 98.5,
   currentPrice: 112.3,
@@ -48,9 +56,13 @@ Add, remove, or edit entries — the summary numbers, the three allocation
 strips, and the holdings table all recompute automatically from this list.
 You never need to touch chart code by hand.
 
-The allowed values for `assetType`, `region`, and `sector` are controlled
-vocabularies defined in `src/data/types.ts`. Extend those unions if you
-need a category that isn't there yet (e.g. add `"Japan"` to `Region`).
+The allowed values for `assetType`, `countries`, and `sectors` are
+controlled vocabularies defined in `src/data/types.ts`. `countries` and
+`sectors` are breakdowns, not single values — a list of
+`{ country, pct }` / `{ sector, pct }` entries whose `pct`s should sum
+to roughly 100. A single stock is one entry at 100%; an ETF is however
+many countries/sectors its holdings span. Extend the `Country` or
+`Sector` unions if you need a category that isn't there yet.
 
 `ticker` must match the symbol exactly as Yahoo Finance shows it,
 including any exchange suffix -- this is what live price fetching looks
@@ -76,22 +88,40 @@ Click **+ Add holding** in the app:
      for an alternate listing of the same fund on an exchange Yahoo
      does cover (e.g. Xetra `.DE` or Euronext `.AS` — same ISIN,
      different venue), or use "Add it manually" below.
-2. Pick a result. The app tries to pre-fill asset type, region, and
-   sector from Yahoo's data, plus the current price. This guess is
-   often right for large individual stocks, but region/sector for ETFs
-   in particular are close to impossible to infer automatically (a
-   fund can span every region and sector at once), so **always check
-   the dropdowns** before confirming — that's what keeps the
-   allocation charts meaningful.
+2. Pick a result. The app automatically classifies its country and
+   sector breakdown from Yahoo's data — asset type, currency, and
+   current price get pre-filled too. There's no country/sector dropdown
+   to fill in for this flow; you'll see a **"Countries & sectors —
+   auto-detected"** panel populate a moment after you pick a symbol.
+   - **For a stock/REIT**, this is straightforward: one country (its
+     HQ), one sector, both at 100%, from Yahoo's profile data.
+   - **For an ETF**, this is harder, because Yahoo's public API gives a
+     fund's *sector* weightings directly (reliable, generally sums to
+     ~100%) but no *country* weightings at all. The closest available
+     substitute is to look up the country of each of the fund's
+     disclosed top ~10 holdings and weight by their share of the fund.
+     For a concentrated fund this covers most of its value; for a
+     broad global index tracker (e.g. VWRL) the top 10 might only be
+     15-20% of assets — the rest is honestly labelled **"Other /
+     Unclassified"** with its real weight, rather than guessed at.
+     This is the real cost of not paying for a holdings-look-through
+     data provider (Morningstar etc. sell this; there's no free public
+     API for it). If a fund fails to classify at all (no sector or
+     holdings data on Yahoo — common for some bond funds), it's saved
+     as 100% "Other / Unclassified" / "Diversified / Multi-Sector"
+     rather than blocking the add.
 3. Fill in shares and average cost (these aren't fetchable from
    anywhere and have to be typed in), then **Add to portfolio**.
 
 Can't find something in search? Click **Add it manually** to type in
-your own ticker, name, and category — useful for anything Yahoo
-Finance doesn't index, or a Tradegate-only listing. Live price refresh
-will still work afterwards if the ticker you enter happens to be one
-Yahoo recognizes; otherwise it just keeps showing whatever
-`currentPrice` you typed in.
+your own ticker, name, and asset type — useful for anything Yahoo
+Finance doesn't index, or a Tradegate-only listing. In this flow the
+app still tries an **Auto-detect** button first (Yahoo's data endpoint
+sometimes resolves a ticker its search index missed); only if that
+comes back empty do you get a manual single country/sector picker
+(100% each) as a last resort. Live price refresh will still work
+afterwards if the ticker you enter happens to be one Yahoo recognizes;
+otherwise it just keeps showing whatever `currentPrice` you typed in.
 
 **Neither DEGIRO nor justETF have a public API** (both require a
 login, or aren't documented for third-party use at all), so this app
@@ -253,6 +283,27 @@ Options:
   dollar as a euro
 - A "Convert to EUR" helper in the Add Holding form for USD/GBP
   instruments
+
+**Brick 4 -- automatic, detailed country and sector classification**
+- `region`/`sector` (single value each) replaced by `countries`/
+  `sectors` (weighted breakdowns) in the data model
+  (`src/data/types.ts`)
+- Automatic classification on add — no manual country/sector dropdown
+  in the normal search-and-select flow (`src/lib/autoClassify.ts`,
+  `src/lib/classify.ts`)
+  - Stocks/REITs: single country + sector from Yahoo's profile data
+  - ETFs: full sector-weighting breakdown from Yahoo, plus a
+    top-holdings-based country breakdown with an honest "Other /
+    Unclassified" remainder (see the Add Holding section above for
+    the tradeoffs)
+- Manual entry still has a last-resort single country/sector picker,
+  but only after an auto-detect attempt against Yahoo fails
+- Allocation math (`computeWeightedAllocation` in
+  `src/lib/calculations.ts`) now splits a holding's value across every
+  country/sector it's classified into, weighted by percentage, instead
+  of assigning the whole holding to one bucket
+- Holdings table shows a compact, hoverable breakdown per holding
+  instead of a single region/sector tag
 
 ## Roadmap — next bricks, in a sensible order
 

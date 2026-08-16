@@ -3,6 +3,7 @@ import type { Holding } from "../data/types";
 
 interface Props {
   holdings: Holding[];
+  onRemove?: (ticker: string) => void;
 }
 
 const CURRENCY_SYMBOL: Record<Holding["currency"], string> = {
@@ -11,14 +12,11 @@ const CURRENCY_SYMBOL: Record<Holding["currency"], string> = {
   GBP: "£",
 };
 
-export default function HoldingsTable({ holdings }: Props) {
+export default function HoldingsTable({ holdings, onRemove }: Props) {
   const rows = holdings.map(computeHoldingMetrics).sort((a, b) => b.marketValue - a.marketValue);
 
   return (
-    <div className="border-t border-line pt-4">
-      <h3 className="font-display text-sm uppercase tracking-[0.14em] text-ink-soft mb-3">
-        Holdings
-      </h3>
+    <div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -30,6 +28,7 @@ export default function HoldingsTable({ holdings }: Props) {
               <th className="py-2 pr-4 font-normal text-right">Price</th>
               <th className="py-2 pr-4 font-normal text-right">Value</th>
               <th className="py-2 font-normal text-right">Gain/Loss</th>
+              {onRemove && <th className="py-2 pl-4 font-normal text-right sr-only">Remove</th>}
             </tr>
           </thead>
           <tbody>
@@ -58,6 +57,17 @@ export default function HoldingsTable({ holdings }: Props) {
                     {positive ? "+" : ""}
                     {gainLossPct.toFixed(1)}%
                   </td>
+                  {onRemove && (
+                    <td className="py-2.5 pl-4 text-right">
+                      <button
+                        onClick={() => onRemove(holding.ticker)}
+                        aria-label={`Remove ${holding.ticker}`}
+                        className="text-ink-soft hover:text-loss font-mono text-xs"
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
             })}

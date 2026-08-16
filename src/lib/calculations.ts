@@ -77,22 +77,33 @@ export interface AllocationSlice {
 }
 
 /**
- * Groups holdings by an arbitrary key (region, sector, assetType) and
- * returns each group's share of total portfolio value (in EUR),
- * sorted largest first.
+ * Groups holdings by an arbitrary key and returns each group's share of
+ * total portfolio value (in EUR), sorted largest first.
+ *
+ * `getWeights` returns, for one holding, the list of {key, pct} it
+ * should be split across — pct is that key's share (0-100) of *that
+ * holding's* value, not the whole portfolio. A single stock typically
+ * returns one key at 100%; an ETF/fund can return many (its country or
+ * sector breakdown), and the holding's market value is split across
+ * them proportionally before being summed into the portfolio-level
+ * totals. Use `[{ key: someString, pct: 100 }]` for a plain single-value
+ * grouping (e.g. asset type).
  */
-export function computeAllocation(
+export function computeWeightedAllocation(
   holdings: Holding[],
   fxRates: FxRates,
-  groupBy: (h: Holding) => string
+  getWeights: (h: Holding) => { key: string; pct: number }[]
 ): AllocationSlice[] {
   const metrics = holdings.map((h) => computeHoldingMetrics(h, fxRates));
   const totalValueEur = sum(metrics.map((m) => m.marketValueEur));
 
   const groups = new Map<string, number>();
   for (const m of metrics) {
-    const key = groupBy(m.holding);
-    groups.set(key, (groups.get(key) ?? 0) + m.marketValueEur);
+    for (const w of getWeights(m.holding)) {
+      if (w.pct <= 0) continue;
+      const portion = m.marketValueEur * (w.pct / 100);
+      groups.set(w.key, (groups.get(w.key) ?? 0) + portion);
+    }
   }
 
   const slices = Array.from(groups.entries()).map(([label, value]) => ({

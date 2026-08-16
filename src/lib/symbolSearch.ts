@@ -96,11 +96,11 @@ async function profileViaProxy(
 
 /**
  * Best-effort fetch of sector/industry/country/currency for a single
- * ticker, used to pre-fill the Add Holding form. Yahoo doesn't return
- * this for every symbol (ETFs especially often lack it), so every field
- * is optional — the form always lets you confirm or override via its
- * dropdowns rather than trusting this blindly. Fails silently (returns
- * {}) rather than blocking the add flow, since this is a nice-to-have.
+ * ticker, used to auto-classify a stock (single country/sector at
+ * 100%) and to resolve the country of each of a fund's top holdings.
+ * Yahoo doesn't return this for every symbol, so every field is
+ * optional. Fails silently (returns {}) rather than blocking the add
+ * flow.
  */
 export async function fetchSymbolProfile(ticker: string): Promise<SymbolProfile> {
   for (const buildUrl of CORS_PROXIES) {
@@ -111,4 +111,65 @@ export async function fetchSymbolProfile(ticker: string): Promise<SymbolProfile>
     }
   }
   return {};
+}
+
+export interface FundTopHolding {
+  symbol: string;
+  name: string;
+  /** This holding's share of the fund's total value, 0-100. */
+  pctOfFund: number;
+}
+
+export interface FundBreakdown {
+  /** Raw Yahoo sector-weighting keys with their fraction (0-1) of the fund. */
+  sectorWeightings: { key: string; fraction: number }[];
+  /** The fund's disclosed top holdings (Yahoo typically gives up to ~10). */
+  topHoldings: FundTopHolding[];
+}
+
+async function fundBreakdownViaProxy(
+  buildUrl: (target: string) => string,
+  ticker: string
+): Promise<FundBreakdown> {
+  const target = `${YAHOO_QUOTE_SUMMARY_URL}${encodeURIComponent(ticker)}?modules=topHoldings`;
+  const res = await fetchWithTimeout(buildUrl(target));
+  if (!res.ok) throw new Error(`fundBreakdown: HTTP ${res.status}`);
+
+  const data = await res.json();
+  const result = data?.quoteSummary?.result?.[0]?.topHoldings;
+
+  const sectorWeightings: { key: string; fraction: number }[] = (result?.sectorWeightings ?? []).map(
+    (entry: Record<string, { raw?: number }>) => {
+      const key = Object.keys(entry)[0];
+      return { key, fraction: entry[key]?.raw ?? 0 };
+    }
+  );
+
+  const topHoldings: FundTopHolding[] = (result?.holdings ?? []).map(
+    (h: { symbol?: string; holdingName?: string; holdingPercent?: { raw?: number } }) => ({
+      symbol: h.symbol ?? "",
+      name: h.holdingName ?? h.symbol ?? "",
+      pctOfFund: (h.holdingPercent?.raw ?? 0) * 100,
+    })
+  );
+
+  return { sectorWeightings, topHoldings };
+}
+
+/**
+ * Best-effort fetch of an ETF/fund's sector weightings and top
+ * holdings, used to automatically build its country and sector
+ * breakdown (see autoClassify.ts). Not every fund has this data on
+ * Yahoo (bond funds especially) — callers should treat an empty
+ * result as "couldn't classify" rather than "invested in nothing".
+ */
+export async function fetchFundBreakdown(ticker: string): Promise<FundBreakdown> {
+  for (const buildUrl of CORS_PROXIES) {
+    try {
+      return await fundBreakdownViaProxy(buildUrl, ticker);
+    } catch {
+      // try next proxy, then give up quietly
+    }
+  }
+  return { sectorWeightings: [], topHoldings: [] };
 }

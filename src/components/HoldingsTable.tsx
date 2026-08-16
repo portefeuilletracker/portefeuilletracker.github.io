@@ -1,5 +1,5 @@
 import { computeHoldingMetrics } from "../lib/calculations";
-import type { Holding } from "../data/types";
+import type { CountryWeight, Holding, SectorWeight } from "../data/types";
 import type { FxRates } from "../lib/fxRates";
 
 interface Props {
@@ -13,6 +13,34 @@ const CURRENCY_SYMBOL: Record<Holding["currency"], string> = {
   USD: "$",
   GBP: "£",
 };
+
+/**
+ * Renders a breakdown array (countries or sectors) as a compact,
+ * truncated summary line with a full-detail tooltip — e.g.
+ * "US 62% · Japan 6% · +5 more" with every entry in the title attr.
+ */
+function BreakdownSummary({ items }: { items: { label: string; pct: number }[] }) {
+  if (items.length === 0) return <span className="text-ink-soft">—</span>;
+  const sorted = [...items].sort((a, b) => b.pct - a.pct);
+  const shown = sorted.slice(0, 2);
+  const rest = sorted.length - shown.length;
+  const full = sorted.map((i) => `${i.label} ${i.pct.toFixed(0)}%`).join(", ");
+
+  return (
+    <span title={full} className="cursor-help">
+      {shown.map((i) => `${i.label} ${i.pct.toFixed(0)}%`).join(" · ")}
+      {rest > 0 && <span className="text-ink-soft"> · +{rest} more</span>}
+    </span>
+  );
+}
+
+function countryItems(countries: CountryWeight[]) {
+  return countries.map((c) => ({ label: c.country, pct: c.pct }));
+}
+
+function sectorItems(sectors: SectorWeight[]) {
+  return sectors.map((s) => ({ label: s.sector, pct: s.pct }));
+}
 
 export default function HoldingsTable({ holdings, fxRates, onRemove }: Props) {
   const rows = holdings
@@ -28,6 +56,8 @@ export default function HoldingsTable({ holdings, fxRates, onRemove }: Props) {
               <th className="py-2 pr-4 font-normal">Ticker</th>
               <th className="py-2 pr-4 font-normal">Name</th>
               <th className="py-2 pr-4 font-normal">Type</th>
+              <th className="py-2 pr-4 font-normal">Countries</th>
+              <th className="py-2 pr-4 font-normal">Sectors</th>
               <th className="py-2 pr-4 font-normal text-right">Shares</th>
               <th className="py-2 pr-4 font-normal text-right">Price</th>
               <th className="py-2 pr-4 font-normal text-right">Value (EUR)</th>
@@ -51,6 +81,12 @@ export default function HoldingsTable({ holdings, fxRates, onRemove }: Props) {
                   </td>
                   <td className="py-2.5 pr-4 text-ink-soft">{holding.name}</td>
                   <td className="py-2.5 pr-4 text-ink-soft">{holding.assetType}</td>
+                  <td className="py-2.5 pr-4 text-ink-soft text-xs whitespace-nowrap">
+                    <BreakdownSummary items={countryItems(holding.countries)} />
+                  </td>
+                  <td className="py-2.5 pr-4 text-ink-soft text-xs whitespace-nowrap">
+                    <BreakdownSummary items={sectorItems(holding.sectors)} />
+                  </td>
                   <td className="py-2.5 pr-4 text-right font-mono tabular">{holding.shares}</td>
                   <td className="py-2.5 pr-4 text-right font-mono tabular">
                     {sym}

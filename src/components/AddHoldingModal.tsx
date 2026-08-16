@@ -1,19 +1,65 @@
 import { useEffect, useRef, useState } from "react";
-import type { AssetType, Holding, Region, Sector } from "../data/types";
+import type {
+  AssetType,
+  Country,
+  CountryWeight,
+  Holding,
+  Sector,
+  SectorWeight,
+} from "../data/types";
 import { fetchSymbolProfile, searchSymbols, type SymbolMatch } from "../lib/symbolSearch";
 import { fetchLivePrices } from "../lib/priceApi";
 import { fetchFxRates, convertCurrency, type FxRates } from "../lib/fxRates";
-import { mapAssetType, mapRegion, mapSector } from "../lib/classify";
+import { mapAssetType } from "../lib/classify";
+import { classifyHolding, type ClassificationResult } from "../lib/autoClassify";
 
 const ASSET_TYPES: AssetType[] = ["Stock", "ETF", "Bond", "REIT", "Crypto", "Cash"];
-const REGIONS: Region[] = [
-  "North America",
-  "Europe",
-  "Emerging Markets",
-  "Asia-Pacific",
-  "Global / Diversified",
+const CURRENCIES: Holding["currency"][] = ["EUR", "USD", "GBP"];
+
+const COUNTRIES: Country[] = [
+  "United States",
+  "Canada",
+  "Mexico",
+  "Brazil",
+  "United Kingdom",
+  "Germany",
+  "France",
   "Netherlands",
+  "Switzerland",
+  "Spain",
+  "Italy",
+  "Sweden",
+  "Belgium",
+  "Denmark",
+  "Norway",
+  "Finland",
+  "Ireland",
+  "Austria",
+  "Portugal",
+  "Poland",
+  "Luxembourg",
+  "Japan",
+  "China",
+  "Hong Kong",
+  "South Korea",
+  "Taiwan",
+  "Singapore",
+  "Australia",
+  "New Zealand",
+  "India",
+  "Indonesia",
+  "Thailand",
+  "Malaysia",
+  "Philippines",
+  "Vietnam",
+  "South Africa",
+  "Saudi Arabia",
+  "United Arab Emirates",
+  "Israel",
+  "Turkey",
+  "Other / Unclassified",
 ];
+
 const SECTORS: Sector[] = [
   "Technology",
   "Financials",
@@ -29,7 +75,6 @@ const SECTORS: Sector[] = [
   "Diversified / Multi-Sector",
   "Cash",
 ];
-const CURRENCIES: Holding["currency"][] = ["EUR", "USD", "GBP"];
 
 interface Props {
   isOpen: boolean;
@@ -40,13 +85,12 @@ interface Props {
 }
 
 type Step = "search" | "form";
+type ClassifyStatus = "idle" | "loading" | "done" | "error";
 
 const emptyForm = {
   ticker: "",
   name: "",
   assetType: "Stock" as AssetType,
-  region: "Global / Diversified" as Region,
-  sector: "Diversified / Multi-Sector" as Sector,
   shares: "",
   avgCost: "",
   currentPrice: "",
@@ -71,6 +115,21 @@ export default function AddHoldingModal({
   const [duplicateWarning, setDuplicateWarning] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Country/sector breakdown is never hand-picked when we have real
+  // Yahoo data — it's produced by classifyHolding (autoClassify.ts) and
+  // shown read-only. `breakdown` is null until classification resolves;
+  // `classifyStatus` drives the loading/fallback messaging. The
+  // manualCountry/manualSector single pickers below are the last-resort
+  // fallback, only ever shown in the manual-entry flow, and only after
+  // an auto-detect attempt against Yahoo's data has failed.
+  const [breakdown, setBreakdown] = useState<{
+    countries: CountryWeight[];
+    sectors: SectorWeight[];
+  } | null>(null);
+  const [classifyStatus, setClassifyStatus] = useState<ClassifyStatus>("idle");
+  const [manualCountry, setManualCountry] = useState<Country>("Other / Unclassified");
+  const [manualSector, setManualSector] = useState<Sector>("Diversified / Multi-Sector");
+
   // Tracks which currency avgCost/currentPrice are CURRENTLY expressed
   // in. Starts as the instrument's real trading currency once fetched;
   // updates to match `form.currency` after a conversion, so the
@@ -89,6 +148,10 @@ export default function AddHoldingModal({
       setDuplicateWarning(false);
       setValuesCurrency(null);
       setRates(fxRatesProp);
+      setBreakdown(null);
+      setClassifyStatus("idle");
+      setManualCountry("Other / Unclassified");
+      setManualSector("Diversified / Multi-Sector");
     }
   }, [isOpen, fxRatesProp]);
 
@@ -122,6 +185,11 @@ export default function AddHoldingModal({
     fetchFxRates([valuesCurrency]).then((r) => setRates((prev) => ({ ...prev, ...r })));
   }, [valuesCurrency, rates]);
 
+  function applyClassification(result: ClassificationResult) {
+    setBreakdown({ countries: result.countries, sectors: result.sectors });
+    setClassifyStatus(result.isFallback ? "error" : "done");
+  }
+
   async function selectSymbol(match: SymbolMatch) {
     if (existingTickers.includes(match.ticker)) {
       setDuplicateWarning(true);
@@ -138,13 +206,17 @@ export default function AddHoldingModal({
       name: match.name,
       assetType,
     });
+    setBreakdown(null);
+    setClassifyStatus("loading");
 
-    // Best-effort pre-fill: sector/region/currency/price. Every one of
-    // these can silently come back empty - the form still works, you'll
-    // just fill those fields in yourself.
-    const [profile, priceResult] = await Promise.all([
+    // Best-effort pre-fill: currency/price, plus automatic country and
+    // sector classification. Every one of these can silently come back
+    // empty/fallback — the form still works, you'll just see "Other /
+    // Unclassified" and "Diversified / Multi-Sector" for that holding.
+    const [profile, priceResult, classification] = await Promise.all([
       fetchSymbolProfile(match.ticker),
       fetchLivePrices([match.ticker]).catch(() => null),
+      classifyHolding(match.ticker, assetType),
     ]);
 
     const live = priceResult?.prices.get(match.ticker);
@@ -152,12 +224,11 @@ export default function AddHoldingModal({
 
     setForm((f) => ({
       ...f,
-      region: mapRegion(profile.country, assetType),
-      sector: mapSector(profile.sector, assetType),
       currency: nativeCurrency ?? f.currency,
       currentPrice: live ? String(live.price) : f.currentPrice,
     }));
     setValuesCurrency(nativeCurrency ?? null);
+    applyClassification(classification);
   }
 
   function startManualEntry() {
@@ -165,7 +236,17 @@ export default function AddHoldingModal({
     setManualEntry(true);
     setForm({ ...emptyForm, ticker: query.trim() });
     setValuesCurrency(null);
+    setBreakdown(null);
+    setClassifyStatus("idle");
     setStep("form");
+  }
+
+  async function tryAutoDetectManual() {
+    const ticker = form.ticker.trim();
+    if (!ticker) return;
+    setClassifyStatus("loading");
+    const classification = await classifyHolding(ticker, form.assetType);
+    applyClassification(classification);
   }
 
   function convertValuesToSelectedCurrency() {
@@ -200,12 +281,19 @@ export default function AddHoldingModal({
     const currentPrice = parseFloat(form.currentPrice) || avgCost;
     if (!shares || !avgCost) return;
 
+    // Real (auto-detected) breakdown wins whenever we have one. Only a
+    // holding that never resolved against Yahoo at all (pure manual
+    // entry, auto-detect never tried or it failed) falls back to the
+    // single manually-picked country/sector at 100%.
+    const countries: CountryWeight[] = breakdown?.countries ?? [{ country: manualCountry, pct: 100 }];
+    const sectors: SectorWeight[] = breakdown?.sectors ?? [{ sector: manualSector, pct: 100 }];
+
     onAdd({
       ticker,
       name,
       assetType: form.assetType,
-      region: form.region,
-      sector: form.sector,
+      countries,
+      sectors,
       shares,
       avgCost,
       currentPrice,
@@ -225,6 +313,7 @@ export default function AddHoldingModal({
     showConvert && valuesCurrency
       ? convertCurrency(1, valuesCurrency, form.currency, rates)
       : null;
+  const addDisabled = !form.shares || !form.avgCost || classifyStatus === "loading";
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-ink/40 px-4 py-10 overflow-y-auto">
@@ -370,28 +459,6 @@ export default function AddHoldingModal({
                   ))}
                 </select>
               </Field>
-              <Field label="Region">
-                <select
-                  value={form.region}
-                  onChange={(e) => setForm({ ...form, region: e.target.value as Region })}
-                  className={selectClass}
-                >
-                  {REGIONS.map((r) => (
-                    <option key={r}>{r}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Sector">
-                <select
-                  value={form.sector}
-                  onChange={(e) => setForm({ ...form, sector: e.target.value as Sector })}
-                  className={selectClass}
-                >
-                  {SECTORS.map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </select>
-              </Field>
               <Field label="Shares">
                 <input
                   type="number"
@@ -439,6 +506,64 @@ export default function AddHoldingModal({
               </Field>
             </div>
 
+            {!manualEntry && (
+              <BreakdownPanel status={classifyStatus} breakdown={breakdown} />
+            )}
+
+            {manualEntry && breakdown && (
+              <BreakdownPanel status={classifyStatus} breakdown={breakdown} />
+            )}
+
+            {manualEntry && !breakdown && (
+              <div className="rounded-sm border border-line bg-white/40 px-3 py-2.5 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-ink-soft">
+                    Yahoo's search didn't have this ticker, but its data endpoint sometimes still
+                    resolves it — worth a try before picking a single country/sector by hand.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={tryAutoDetectManual}
+                    disabled={!form.ticker.trim() || classifyStatus === "loading"}
+                    className="shrink-0 rounded-sm bg-ink px-3 py-1.5 text-xs text-paper hover:bg-ink/90 disabled:opacity-40"
+                  >
+                    {classifyStatus === "loading" ? "Trying…" : "Auto-detect"}
+                  </button>
+                </div>
+                {classifyStatus === "error" && (
+                  <p className="text-[11px] text-loss">
+                    No usable data found for this ticker on Yahoo — pick a single primary country
+                    and sector below (100% each). You can always remove and re-add this holding
+                    later if it becomes searchable.
+                  </p>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Country">
+                    <select
+                      value={manualCountry}
+                      onChange={(e) => setManualCountry(e.target.value as Country)}
+                      className={selectClass}
+                    >
+                      {COUNTRIES.map((c) => (
+                        <option key={c}>{c}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Sector">
+                    <select
+                      value={manualSector}
+                      onChange={(e) => setManualSector(e.target.value as Sector)}
+                      className={selectClass}
+                    >
+                      {SECTORS.map((s) => (
+                        <option key={s}>{s}</option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              </div>
+            )}
+
             {showConvert && (
               <div className="rounded-sm border border-brass/40 bg-brass/10 px-3 py-2.5">
                 <div className="flex items-center justify-between gap-3">
@@ -480,7 +605,7 @@ export default function AddHoldingModal({
               </button>
               <button
                 onClick={submit}
-                disabled={!form.shares || !form.avgCost}
+                disabled={addDisabled}
                 className="rounded-sm bg-ink px-4 py-2 text-sm text-paper hover:bg-ink/90 disabled:opacity-40"
               >
                 Add to portfolio
@@ -489,6 +614,50 @@ export default function AddHoldingModal({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Read-only display of an auto-detected country/sector breakdown. */
+function BreakdownPanel({
+  status,
+  breakdown,
+}: {
+  status: ClassifyStatus;
+  breakdown: { countries: CountryWeight[]; sectors: SectorWeight[] } | null;
+}) {
+  return (
+    <div className="rounded-sm border border-line bg-white/40 px-3 py-2.5">
+      <p className="text-xs uppercase tracking-wide text-ink-soft mb-1">
+        Countries &amp; sectors — auto-detected
+      </p>
+      {status === "loading" && <p className="py-1 text-sm text-ink-soft">Classifying…</p>}
+      {status !== "loading" && breakdown && (
+        <div className="grid grid-cols-2 gap-x-4 text-sm">
+          <ul className="space-y-0.5">
+            {breakdown.countries.map((c) => (
+              <li key={c.country} className="flex items-center justify-between gap-2">
+                <span className="truncate text-ink-soft">{c.country}</span>
+                <span className="font-mono tabular shrink-0">{c.pct.toFixed(0)}%</span>
+              </li>
+            ))}
+          </ul>
+          <ul className="space-y-0.5">
+            {breakdown.sectors.map((s) => (
+              <li key={s.sector} className="flex items-center justify-between gap-2">
+                <span className="truncate text-ink-soft">{s.sector}</span>
+                <span className="font-mono tabular shrink-0">{s.pct.toFixed(0)}%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {status === "error" && (
+        <p className="mt-1.5 text-[11px] text-ink-soft">
+          Yahoo didn't have enough data to classify this one automatically, so it's saved as
+          "Other / Unclassified" / "Diversified / Multi-Sector" above.
+        </p>
+      )}
     </div>
   );
 }

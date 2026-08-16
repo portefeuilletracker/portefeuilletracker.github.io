@@ -69,6 +69,13 @@ Click **+ Add holding** in the app:
    Finance's symbol database directly (same unofficial, keyless
    approach as live prices below), so effectively any listed stock or
    ETF is searchable — not just the five starter positions.
+   - **Known gap: Tradegate.** Yahoo Finance doesn't cover the
+     Tradegate exchange (`TDG` on DEGIRO) for arbitrary instruments —
+     it's not in Yahoo's public data at all, so no ticker suffix will
+     make it searchable here. If your ETF only trades there, search
+     for an alternate listing of the same fund on an exchange Yahoo
+     does cover (e.g. Xetra `.DE` or Euronext `.AS` — same ISIN,
+     different venue), or use "Add it manually" below.
 2. Pick a result. The app tries to pre-fill asset type, region, and
    sector from Yahoo's data, plus the current price. This guess is
    often right for large individual stocks, but region/sector for ETFs
@@ -78,6 +85,31 @@ Click **+ Add holding** in the app:
    allocation charts meaningful.
 3. Fill in shares and average cost (these aren't fetchable from
    anywhere and have to be typed in), then **Add to portfolio**.
+
+Can't find something in search? Click **Add it manually** to type in
+your own ticker, name, and category — useful for anything Yahoo
+Finance doesn't index, or a Tradegate-only listing. Live price refresh
+will still work afterwards if the ticker you enter happens to be one
+Yahoo recognizes; otherwise it just keeps showing whatever
+`currentPrice` you typed in.
+
+**Neither DEGIRO nor justETF have a public API** (both require a
+login, or aren't documented for third-party use at all), so this app
+can't search either of them directly the way it does Yahoo Finance —
+and it deliberately doesn't try to, since that would mean scraping an
+undocumented page (fragile, breaks silently) or asking you to type
+your broker password into client-side JS (unsafe). Two things help
+instead:
+
+- Every holding has an optional **Reference code** field — a free-text
+  note (DEGIRO's own symbol, an ISIN, whatever helps you cross-check
+  against your broker) shown under the ticker in the table. It's
+  purely a label; only `ticker` is ever used for live pricing.
+- If you're not sure of the right ticker for a European ETF, justETF
+  is a good place to look one up by name — there's a shortcut link to
+  it in the "Add manually" screen. Once you have the ISIN, try pasting
+  *that* into the main search box first — Yahoo indexes by ISIN too,
+  so it'll often find the listing and you keep live pricing.
 
 Each row in the holdings table has a **✕** to remove it.
 

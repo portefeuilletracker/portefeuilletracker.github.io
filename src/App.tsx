@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Holding } from "./data/types";
 import { computeWeightedAllocation, computePortfolioSummary } from "./lib/calculations";
 import { fetchLivePrices } from "./lib/priceApi";
 import { fetchFxRates, type FxRates } from "./lib/fxRates";
+import { classifyHolding } from "./lib/autoClassify";
 import { loadHoldings, resetHoldings, saveHoldings } from "./lib/portfolioStore";
 import SummaryHeader from "./components/SummaryHeader";
 import AllocationStrip from "./components/AllocationStrip";
@@ -13,7 +14,16 @@ import AddHoldingModal from "./components/AddHoldingModal";
 type FetchStatus = "idle" | "loading" | "success" | "error";
 
 export default function App() {
-  const [holdings, setHoldings] = useState<Holding[]>(() => loadHoldings());
+  // loadHoldings() also migrates any old-schema data in localStorage
+  // (see portfolioStore.ts) - keep that one-time result in a ref so we
+  // can kick off background re-classification for migrated tickers
+  // without loading/parsing localStorage a second time.
+  const initialLoadRef = useRef<ReturnType<typeof loadHoldings> | null>(null);
+  if (initialLoadRef.current === null) {
+    initialLoadRef.current = loadHoldings();
+  }
+
+  const [holdings, setHoldings] = useState<Holding[]>(() => initialLoadRef.current!.holdings);
   const [status, setStatus] = useState<FetchStatus>("idle");
   const [fetchedAt, setFetchedAt] = useState<Date | null>(null);
   const [failedTickers, setFailedTickers] = useState<string[]>([]);
@@ -53,6 +63,26 @@ export default function App() {
 
   useEffect(() => {
     refreshPrices();
+
+    // Any holdings that came from an older data schema were given a
+    // placeholder "Other / Unclassified" / "Diversified / Multi-Sector"
+    // breakdown by loadHoldings() so the app doesn't crash - now
+    // actually re-derive their real countries/sectors from live data,
+    // same lookup the Add Holding form uses.
+    const migratedTickers = initialLoadRef.current?.migratedTickers ?? [];
+    const base = initialLoadRef.current?.holdings ?? [];
+    migratedTickers.forEach(async (ticker) => {
+      const holding = base.find((h) => h.ticker === ticker);
+      if (!holding) return;
+      const result = await classifyHolding(ticker, holding.assetType);
+      setHoldings((prev) => {
+        const updated = prev.map((h) =>
+          h.ticker === ticker ? { ...h, countries: result.countries, sectors: result.sectors } : h
+        );
+        saveHoldings(updated);
+        return updated;
+      });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
